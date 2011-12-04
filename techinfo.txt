@@ -1,0 +1,222 @@
+
+                         ef2master, an open master server
+                         -------------------------------
+
+                              Technical information
+                              ---------------------
+
+
+1) COMPILING EF2MASTER
+2) PROTOCOL
+3) BEHAVIOUR
+
+
+1) COMPILING EF2MASTER:
+
+Dpmaster is known to compile successfully on GCC, MinGW (GCC for Windows), and
+Microsoft Visual Studio 8. You can also cross-compile it to Windows using MinGW.
+
+Here are the commands you will have to run, depending on your system.
+
+    1) Building on a UNIX system (Linux, BSDs, and Mac OS X):
+
+        - For building release binaries:
+
+            make release
+
+        - For building debug binaries:
+
+            make debug
+
+        - For cleaning the files produced by a build:
+
+            make clean
+
+
+    2) Building on Windows using MinGW:
+		- Move EF2.icon from your EF2 install or disc into your ef2master/src directory
+		
+        - For building release binaries:
+            
+            mingw32-make mingw-release
+
+        - For building debug binaries:
+            
+            mingw32-make mingw-debug
+
+        - For cleaning the files produced by a build:
+            
+            mingw32-make win-clean
+
+
+    3) Cross-compiling from UNIX to Windows using MinGW:
+		- Move EF2.icon from EF2 disc into your ef2master/src directory
+	
+        Here, you have to specify the compiler name by hand. In these examples,
+        my MinGW compiler is "i586-mingw32msvc-gcc".
+
+        - For building release binaries:
+            
+            make mingw-release CC=i586-mingw32msvc-gcc
+
+        - For building debug binaries:
+            
+            make mingw-debug CC=i586-mingw32msvc-gcc
+
+        - For cleaning the files produced by a build:
+            
+            make clean
+
+
+    4) Building on Windows using Microsoft Visual Studio:
+
+        No command line here. Open the project by double-clicking on
+        "ef2master.sln". Choose the configuration you want, either "Debug" or
+        "Release". Then go to the "Build" menu and click on "Build solution".
+
+        You'll find the executable file in a newly created subdirectory, called
+        "Debug" or "Release", depending on the configuration you chose.
+
+2) PROTOCOL:
+
+ef2master uses the EF2 protocol that is based on Quake III Arena's master
+server protocol. The reference document for this protocol can be found on id
+Software anonymous FTP site:
+
+    ftp://ftp.idsoftware.com/idstuff/quake3/docs/server.txt
+
+ef2master uses 5 types of messages. The 5 basic types are:
+"heartbeat", "getinfo", "infoResponse", "getservers" and "getserversResponse".
+The first 3 basic types are used by servers to authenticate and register
+themselves to a master server. The remaining types are used by clients to
+retrieve a list of servers from a master server. All messages start with 4 bytes
+set to 0xFF (character 255), then the command type in plain text.
+
+    1) heartbeat:
+
+        - description:
+
+            The heartbeat is sent by a server when it wants to get noticed by a
+            master. A server should send an heartbeat each time it becomes empty
+            or full, or stop being empty or full, plus it should make sure the 
+            master gets at least one heartbeat from it every 5 to 15 minutes, so
+            the master doesn't remove it from its list of active servers.
+
+        - sample:
+
+            "\xFF\xFF\xFF\xFFheartbeat TikiServer-1\x0A"
+
+    2) getinfo:
+
+        - description:
+
+            This message is sent by a master to a server, usually in response
+            to an "hearbeat" by this very server. It is used by the master to
+            trigger the sending of an "infoResponse" from the server. The
+            challenge string is necessary to authenticate the server's
+            corresponding "infoResponse".
+
+        - sample:
+
+            "\xFF\xFF\xFF\xFFgetinfo A_ch4Lleng3"
+
+        - syntax:
+
+            The message type is followed by a challenge string. All printable
+            characters but 5 are allowed in this string (from ASCII code 33 to
+            126). The 5 exceptions are characters '\', '/', ';', '"' and '%'.
+
+    3) infoResponse:
+
+        - description:
+
+             An "infoResponse" message is the reponse to a "getinfo" request.
+             It contains an infostring including the most important information
+             about the current server state.
+
+        - sample:
+
+            "\xFF\xFF\xFF\xFFinfoResponse\x0A\\sv_maxclients\\8\\clients\\0\\.."
+
+        - syntax:
+
+            The message type is followed by a line feed character and the
+            server's infostring. An infostring is a series of keys and values
+            separated by '\'s. Popular keys include "hostname" (the host name),
+            and "mapname" (the map currently played on this server).
+            This infostring must contain the challenge string sent by the
+            master in the "getinfo" that triggered this response (key name:
+            "challenge"). "sv_maxclients" (the maximum number of clients
+            allowed on the server; must not be 0), "protocol" (the protocol
+            number) and "clients" (the current number of clients on the
+            server) must also be present.
+			
+    4) getservers:
+
+        - description:
+
+             A "getservers" message is sent to a master by a client who wants
+             to get a list of servers. It triggers a "getserversReponse"
+             message from the master.
+
+        - samples:
+
+            "\xFF\xFF\xFF\xFFgetservers 66 empty full"
+
+        - syntax:
+
+            The message must contain a protocol version, and optionally "empty"
+            and/or "full" depending on whether or not the client also wants to
+            get empty or full servers.
+			
+    5) getserversResponse:
+
+        - description:
+
+            A "getserversResponse" message contains a list of IPv4 servers
+            requested by a client.
+
+        - sample:
+
+            "\xFF\xFF\xFF\xFFgetserversResponse\[...]\EOT\0\0\0"
+
+        - syntax:
+
+            The list of servers is composed of IPv4 addresses and ports. Each
+            server is stored on 8 bytes for the IP address and 4 bytes for the
+            port number, and a '\' to separate it from the next server. All
+            numbers are big-endian oriented (most significant bytes first). For
+            instance, a server hosted at address 1.2.3.4 on port 2048 will be
+            sent as: "010203040800".
+            
+            If the list is too big to fit into one single network packet,
+            ef2master will create as many getserversResponses as necessary to 
+            send all the matching servers. The last message contains a fake
+            server at the end of the list, which is the 6-byte string
+            "EOT\0\0\0", to tell the client that the master has finished to send
+            the server list (EOT stands for "End Of Transmission").
+
+
+3) BEHAVIOUR:
+
+The way ef2master behaves when talking to clients and servers is largely based
+on one important idea: authenticated "infoResponse" messages are the only
+messages we can reasonably trust.
+
+When ef2master receives an "heartbeat" message from a server, it will reply with
+a "getinfo" and register this server for a couple of seconds. If it hasn't sent
+back an "infoResponse" containing a valid challenge string by this time,
+ef2master forgets it. Further "heartbeat" messages can't prolong this time,
+and the server IP address won't be transmitted to any client during that period
+of time.
+
+When ef2master receives a valid "infoResponse" from a server, it associates a new
+timeout value to it (15 min). Only another valid "infoResponse" from this very
+server will be able to refresh this timeout value. Its IP address will be
+transmitted to the appropriate clients, until it timeouts. Then, ef2master
+forgets it.
+
+You may have noticed that this behaviour doesn't take into account the fact
+that some servers send 2 "heartbeat" messages when closing. I deliberately
+choose to keep the behaviour as simple and predictable as possible, hopefully
+making it free from any major abuse.

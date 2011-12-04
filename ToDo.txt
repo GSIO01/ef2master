@@ -1,0 +1,1 @@
+- remove IPv6 support as EF2 does not have it
